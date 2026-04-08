@@ -67,8 +67,8 @@ typedef enum miotyAtClient_returnCode {
     MIOTYATCLIENT_RETURN_CODE_ATReadFailed,
 } miotyAtClient_returnCode;
 
-void miotyAtClientWrite(uint8_t *, uint16_t);
-bool miotyAtClientRead(uint8_t *, uint8_t *);
+extern void miotyAtClientWrite(uint8_t *, uint16_t);
+extern bool miotyAtClientRead(uint8_t *, uint8_t, uint8_t *);
 
 
 /**

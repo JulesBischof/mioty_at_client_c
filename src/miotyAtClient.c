@@ -327,7 +327,7 @@ static miotyAtClient_returnCode get_int_data_ATresponse(uint8_t * AT_cmd, uint8_
     while(1) {
         uint8_t buf[30];
         uint8_t len = 30;
-        if(miotyAtClientRead(buf, &len) == true) {
+        if(miotyAtClientRead(buf, sizeof(buf), &len) == true) {
         
             for (uint8_t i=0; i<len; i++) {
                 if(isalpha(buf[i]))
@@ -377,7 +377,7 @@ static miotyAtClient_returnCode get_data_ATresponse(uint8_t * AT_cmd, uint8_t si
     while(1) {
         uint8_t buf[30];
         uint8_t len = 30;
-        if(miotyAtClientRead(buf, &len)) {
+        if(miotyAtClientRead(buf, sizeof(buf), &len)) {
             for (uint8_t i=0; i<len; i++) {
                 if(isalpha(buf[i]))
                     buf[i] = toupper(buf[i]);
@@ -433,7 +433,7 @@ static miotyAtClient_returnCode check_ATresponse(char * response_buf) {
     while(1) {
         uint8_t buf[30];
         uint8_t len = 30;
-        if(miotyAtClientRead(buf, &len)) {
+        if(miotyAtClientRead(buf, sizeof(buf), &len)) {
             for (uint8_t i=0; i<len; i++) {
                 if(isalpha(buf[i]))
                     buf[i] = toupper(buf[i]);
