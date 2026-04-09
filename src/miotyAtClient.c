@@ -387,17 +387,48 @@ static miotyAtClient_returnCode get_data_ATresponse(uint8_t * AT_cmd, uint8_t si
             response_buf[pos+1] = '\0';
             if (strstr(response_buf, "\r\n0\r\n") || strstr(response_buf, "0\r\n")==response_buf) {
                 return_code = MIOTYATCLIENT_RETURN_CODE_OK;
-                char * pos = strstr(response_buf, AT_cmd+2);
-                pos += sizeCmd;
-                pos = *pos!='\t'? pos+1 : pos;
-                pos++;
-                uint8_t * end_pos = strstr(pos, "\032\r"); // \todo better way?
-                uint32_t len_data = (*sizeBuf)*2;
-                if (end_pos != 0){
-                    len_data = (char *)end_pos - pos;
-                    *sizeBuf = len_data/2;
+                // char * pos = strstr(response_buf, AT_cmd+2);
+                // pos += sizeCmd;
+                // pos = *pos!='\t'? pos+1 : pos;
+                // pos++;
+                // uint8_t * end_pos = strstr(pos, "\032\r"); // \todo better way?
+                // uint32_t len_data = (*sizeBuf)*2;
+                // if (end_pos != 0){
+                //     len_data = (char *)end_pos - pos;
+                //     *sizeBuf = len_data/2;
+                // }
+                // // hey! uint8_t string_hex2byteArray(unsigned char const * hexString, uint8_t const hexStringLength, uint8_t * dest, uint8_t destSize)
+                // string_hex2byteArray(pos, len_data, buffer, *sizeBuf); // parameter missmatch! 
+
+                // get format positions
+                char* pCol = strstr(response_buf, ":");
+                char* pTab = strstr(response_buf, "\t");
+                char* pEnd = strstr(response_buf, "\032");
+                
+                // validate them
+                if (pTab == NULL || pCol == NULL || pEnd == NULL || pCol > pTab || pTab > pEnd)
+                {
+                    return MIOTYATCLIENT_RETURN_CODE_ERR;
                 }
-                string_hex2byteArray(pos, len_data, buffer, *sizeBuf);
+
+                // check data len field (in between : and \t)
+                uint32_t data_len_slice_len = pTab - pCol - 1; // one ofset since we're counting "fence to fence"
+                char* data_len_slice = pCol + 1;
+                uint32_t data_len = string_dec2uint((const unsigned char *)data_len_slice, (const uint8_t)data_len_slice_len);
+
+                // and now get the data
+                uint32_t data_slice_len = pEnd - pTab - 1; // -1 due to from : to \032 there is 1 offset
+                char* data_slice = pTab + 1; // first letter after \t
+
+                // one last validation
+                if ( (2*data_len) != (data_slice_len)) // we're missing bytes
+                {
+                    return MIOTYATCLIENT_RETURN_CODE_ERR;
+                }
+
+                // use string utils
+                string_hex2byteArray((const unsigned char *)data_slice, (const uint8_t)data_slice_len, buffer, *sizeBuf);
+
                 break;
             } else if (strstr(response_buf, "\r\n1\r\n")) {
                 char * err_pos = strstr(response_buf, "-MNFO:");
