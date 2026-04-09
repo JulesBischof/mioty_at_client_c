@@ -387,18 +387,6 @@ static miotyAtClient_returnCode get_data_ATresponse(uint8_t * AT_cmd, uint8_t si
             response_buf[pos+1] = '\0';
             if (strstr(response_buf, "\r\n0\r\n") || strstr(response_buf, "0\r\n")==response_buf) {
                 return_code = MIOTYATCLIENT_RETURN_CODE_OK;
-                // char * pos = strstr(response_buf, AT_cmd+2);
-                // pos += sizeCmd;
-                // pos = *pos!='\t'? pos+1 : pos;
-                // pos++;
-                // uint8_t * end_pos = strstr(pos, "\032\r"); // \todo better way?
-                // uint32_t len_data = (*sizeBuf)*2;
-                // if (end_pos != 0){
-                //     len_data = (char *)end_pos - pos;
-                //     *sizeBuf = len_data/2;
-                // }
-                // // hey! uint8_t string_hex2byteArray(unsigned char const * hexString, uint8_t const hexStringLength, uint8_t * dest, uint8_t destSize)
-                // string_hex2byteArray(pos, len_data, buffer, *sizeBuf); // parameter missmatch! 
 
                 // get format positions
                 char* pCol = strstr(response_buf, ":");
