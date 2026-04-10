@@ -74,6 +74,10 @@ extern bool miotyAtClientRead(uint8_t *, uint8_t, uint8_t *);
 // gives the application the chance to enter e.g. Low Power Modes during uplink messages
 extern void miotyAtClientOnIdle(uint32_t message_len);
 
+extern void miotyAtClientTx_start_cb(void);
+extern void miotyatclientTx_stop_cb(void);
+
+
 
 /**
  * @brief Soft reset of the MIOTY™ modem. Persistent fields shall keep their current value.

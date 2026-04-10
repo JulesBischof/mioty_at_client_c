@@ -52,9 +52,9 @@ static miotyAtClient_returnCode _uni_fsm_receive_mpct(uint32_t *packetCounter)
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
 
-    if(sizeof(read_buffer) != received_bytes) // validation - could be removed on release
+    if(sizeof(read_buffer) <= received_bytes) // validation - could be removed on release
     {
-        return MIOTYATCLIENT_RETURN_CODE_ERR;
+        for(;;); // that would mean an ovverrun happened - block!
     }
 
     // get the position of the col char and the "\r\n" and validate them
@@ -66,14 +66,15 @@ static miotyAtClient_returnCode _uni_fsm_receive_mpct(uint32_t *packetCounter)
     }
     // convert to int
     uint8_t slice_len = pEnd - pCol - 1; // there is one offset since we subtract the EndPos, not the last digit
-    *packetCounter = string_dec2uint((const unsigned char*)pCol, slice_len);
+    *packetCounter = string_dec2uint((const unsigned char*)(pCol + 1), slice_len); // +1 since pCol points to ':'
     
     return MIOTYATCLIENT_RETURN_CODE_OK;
 }
 
 static miotyAtClient_returnCode _uni_fsm_receive_txa(bool txa_one_expected)
 {
-    uint8_t buffersize = txa_one_expected ? sizeof("TXA:1\r\n") : sizeof("TXA:0\r\n0\r\n");
+    uint8_t buffersize = txa_one_expected ? sizeof("-TXA:1\r\n") : sizeof("-TXA:0\r\n0\r\n");
+    buffersize--; // -1 due to strings get followed by a \0 we are not going to receive!
     uint8_t read_buffer[buffersize];
     memset(read_buffer, 0, sizeof(read_buffer)); // clear for now in order to debug but can be removed later
     uint8_t received_bytes = 0;
@@ -111,10 +112,20 @@ static miotyAtClient_returnCode _uni_fsm_receive_txa(bool txa_one_expected)
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
 
+    // if code got here - everything was valid: run callbacks
+    if (txa_one_expected)
+    {
+        miotyAtClientTx_start_cb();
+    }
+    else 
+    {
+        miotyatclientTx_stop_cb();
+    }
+
     return MIOTYATCLIENT_RETURN_CODE_OK;
 }
 
-static miotyAtClient_returnCode _send_uni_uplink_fsm(uint8_t *msg, uint8_t msg_size, uint32_t *packetCounter)
+static miotyAtClient_returnCode _handle_uni_uplink_response_fsm(uint32_t *packetCounter)
 {
     /* now receive the package counter & parse to an integer */
     if (_uni_fsm_receive_mpct(packetCounter) != MIOTYATCLIENT_RETURN_CODE_OK)
@@ -556,9 +567,16 @@ miotyAtClient_returnCode miotyAtClient_sendMessageUniMPF(uint8_t *msg, uint8_t s
 
 miotyAtClient_returnCode miotyAtClient_sendMessageUni(uint8_t *msg, uint8_t sizeMsg, uint32_t *packetCounter)
 {
-    write_cmd_bytes("AT-U", 4, msg, sizeMsg);
-    miotyAtClientOnIdle(sizeMsg);
-    return checkATresponseMsg(packetCounter);
+    // write_cmd_bytes("AT-U", 4, msg, sizeMsg);
+    // miotyAtClientOnIdle(sizeMsg);
+    // return checkATresponseMsg(packetCounter);
+
+    const char* at_cmd = "AT-U";
+    if (write_cmd_bytes(at_cmd, sizeof(at_cmd), msg, sizeMsg) == false)
+    {
+        return MIOTYATCLIENT_RETURN_CODE_ERR;
+    }
+    return _handle_uni_uplink_response_fsm(packetCounter);
 }
 
 miotyAtClient_returnCode miotyAtClient_sendMessageBidiTransparent(uint8_t *msg, uint8_t sizeMsg, uint8_t *data, uint8_t *size_data, uint32_t *packetCounter)
