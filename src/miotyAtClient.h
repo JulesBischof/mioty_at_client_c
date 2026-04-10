@@ -67,8 +67,12 @@ typedef enum miotyAtClient_returnCode {
     MIOTYATCLIENT_RETURN_CODE_ATReadFailed,
 } miotyAtClient_returnCode;
 
-extern void miotyAtClientWrite(uint8_t *, uint16_t);
+extern bool miotyAtClientWrite(uint8_t *, uint16_t);
 extern bool miotyAtClientRead(uint8_t *, uint8_t, uint8_t *);
+
+// gets called on "uplink - idle" events such as the 3 secs during an uplink message
+// gives the application the chance to enter e.g. Low Power Modes during uplink messages
+extern void miotyAtClientOnIdle(uint32_t message_len);
 
 
 /**
