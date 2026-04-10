@@ -354,16 +354,8 @@ static bool write_cmd_bytes(uint8_t *AT_cmd, uint8_t sizeCmd, uint8_t *data, uin
 }
 
 
-static miotyAtClient_returnCode _send_uplink_fsm(uint8_t *msg, uint8_t msg_size, uint32_t *packetCounter)
+static miotyAtClient_returnCode _uni_fsm_receive_mpct(uint32_t *packetCounter)
 {
-    /*
-     * first, send the Command containing it's payload
-     */
-    if (write_cmd_bytes((unsigned char*)"AT-U", 4, msg, msg_size) != true)
-    {
-        return MIOTYATCLIENT_RETURN_CODE_ERR;
-    }
-
     /*
      * init read buffer ...
      * REFERENCE MANUAL - PacketCounter is a 32 bit number: max 10 decimal digits!
@@ -371,16 +363,20 @@ static miotyAtClient_returnCode _send_uplink_fsm(uint8_t *msg, uint8_t msg_size,
      *
      * Therefore: 18 bit deep buffer is sufficient
      */
+
     uint8_t read_buffer[18] = {0};
     uint8_t received_bytes = 0;
 
-    /*
-     * now receive the package counter & parse to an integer
-     */
     if (miotyAtClientRead(read_buffer, sizeof(read_buffer), &received_bytes) != true)
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
+
+    if(sizeof(read_buffer) != received_bytes) // validation - could be removed on release
+    {
+        return MIOTYATCLIENT_RETURN_CODE_ERR;
+    }
+
     // get the position of the col char and the "\r\n" and validate them
     char *pCol = strstr((const char *)read_buffer, (const char *)":");
     char *pEnd = strstr((const char *)read_buffer, (const char *)"\r\n");
@@ -391,57 +387,85 @@ static miotyAtClient_returnCode _send_uplink_fsm(uint8_t *msg, uint8_t msg_size,
     // convert to int
     uint8_t slice_len = pEnd - pCol - 1; // there is one offset since we subtract the EndPos, not the last digit
     *packetCounter = string_dec2uint((const unsigned char*)pCol, slice_len);
+    
+    return MIOTYATCLIENT_RETURN_CODE_OK;
+}
 
-    /*
-     * wait for the "TXA:1\r\n" (ack, that transmit has started)
-     */
-    memset(read_buffer, 0, sizeof(read_buffer)); // clear - could be removed later but is easier to read during debugging
-    if (miotyAtClientRead(read_buffer, sizeof("TXA:1\r\n"), &received_bytes) != true)
+static miotyAtClient_returnCode _uni_fsm_receive_txa(bool txa_one_expected)
+{
+    uint8_t buffersize = txa_one_expected ? sizeof("TXA:1\r\n") : sizeof("TXA:0\r\n0\r\n");
+    uint8_t read_buffer[buffersize];
+    memset(read_buffer, 0, sizeof(read_buffer)); // clear for now in order to debug but can be removed later
+    uint8_t received_bytes = 0;
+
+    if (miotyAtClientRead(read_buffer, sizeof(read_buffer), &received_bytes) != true)
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
+
+    // validate buffer_len - remove for release
+    if (received_bytes != buffersize)
+    {
+        return MIOTYATCLIENT_RETURN_CODE_ERR;
+    }
+
     // validate if TXA was received
     if (strstr((const char*)read_buffer, "TXA") == NULL)
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
+
+    char endString = txa_one_expected ? "\r\n" : "\r\n0\r\n"; // same reason as difference in buffersize
+
     // check the argument - is it a TXA 1?
-    pCol = strstr((const char *)read_buffer, (const char *)":");
-    pEnd = strstr((const char *)read_buffer, (const char *)"\r\n");
+    char* pCol = strstr((const char *)read_buffer, (const char *)":");
+    char* pEnd = strstr((const char *)read_buffer, (const char *)endString);
     if (pCol == NULL || pEnd == NULL)
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
 
-    if (*(pCol + 1) != '1')
+    char expectation = txa_one_expected ? '1' : '0';
+    if (*(pCol + 1) != expectation)
+    {
+        return MIOTYATCLIENT_RETURN_CODE_ERR;
+    }
+
+    return MIOTYATCLIENT_RETURN_CODE_OK;
+}
+
+static miotyAtClient_returnCode _send_uni_uplink_fsm(uint8_t *msg, uint8_t msg_size, uint32_t *packetCounter)
+{
+    /*
+     * first, send the Command containing it's payload
+     */
+    if (write_cmd_bytes((unsigned char*)"AT-U", 4, msg, msg_size) != true)
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
 
     /*
-     * wait for the Transmission to be over: "TXA:0\r\n0\r\n"
+     * now receive the package counter & parse to an integer
      */
-    memset(read_buffer, 0, sizeof(read_buffer)); // clear - could be removed later but is easier to read during debugging
-    if (miotyAtClientRead(read_buffer, sizeof("TXA:1\r\n"), &received_bytes) != true)
-    {
-        return MIOTYATCLIENT_RETURN_CODE_ERR;
-    }
-    // validate if TXA was received
-    if (strstr((const char*)read_buffer, (const char*)"TXA") == NULL)
-    {
-        return MIOTYATCLIENT_RETURN_CODE_ERR;
-    }
-    // get format char positions
-    pCol = strstr((const char *)read_buffer, (const char *)":");
-    pEnd = strstr((const char *)read_buffer, (const char *)"\r\n0\r\n");
-    if (pCol == NULL || pEnd == NULL)
+    if (_uni_fsm_receive_mpct(packetCounter) != MIOTYATCLIENT_RETURN_CODE_OK)
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
 
-    if (*(pCol + 1) != '0')
+    /*
+     * wait for the "TXA:1\r\n" (ack, that transmit has started)
+     */
+    if (_uni_fsm_receive_txa(true) != MIOTYATCLIENT_RETURN_CODE_OK)
     {
-        return MIOTYATCLIENT_RETURN_CODE_ERR;
+        return MIOTYATCLIENT_RETURN_CODE_OK;
+    }
+
+    /*
+     * wait for the Transmission to be over: "TXA:0\r\n0\r\n"
+     */
+    if (_uni_fsm_receive_txa(false) != MIOTYATCLIENT_RETURN_CODE_OK)
+    {
+        return MIOTYATCLIENT_RETURN_CODE_OK;
     }
 
     /*
