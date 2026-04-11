@@ -173,7 +173,7 @@ static bool write_cmd_bytes(uint8_t *AT_cmd, uint8_t sizeCmd, uint8_t *data, uin
     for (uint32_t size = sizeData; size /= 10; digits++)
         ;
     char data_size_string[digits + 1]; // +1 due to \0 termination
-    string_uint2str_la_zt(sizeCmd, data_size_string);
+    string_uint2str_la_zt(sizeData, data_size_string);
 
     // convert payload into hex coded string
     const uint32_t data_string_size = sizeData * 2; // hex representation
@@ -585,8 +585,8 @@ miotyAtClient_returnCode miotyAtClient_sendMessageUni(uint8_t *msg, uint8_t size
     // miotyAtClientOnIdle(sizeMsg);
     // return checkATresponseMsg(packetCounter);
 
-    const char *at_cmd = "AT-U";
-    if (write_cmd_bytes(at_cmd, sizeof(at_cmd), msg, sizeMsg) == false)
+    const char at_cmd[] = "AT-U";
+    if (write_cmd_bytes(at_cmd, sizeof(at_cmd) - 1, msg, sizeMsg) == false)
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
