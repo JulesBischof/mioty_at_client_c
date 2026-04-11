@@ -52,9 +52,10 @@ static miotyAtClient_returnCode _uni_fsm_receive_mpct(uint32_t *packetCounter)
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
 
-    if(sizeof(read_buffer) <= received_bytes) // validation - could be removed on release
+    if (sizeof(read_buffer) <= received_bytes) // validation - could be removed on release
     {
-        for(;;); // that would mean an ovverrun happened - block!
+        for (;;)
+            ; // that would mean an ovverrun happened - block!
     }
 
     // get the position of the col char and the "\r\n" and validate them
@@ -65,9 +66,9 @@ static miotyAtClient_returnCode _uni_fsm_receive_mpct(uint32_t *packetCounter)
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
     // convert to int
-    uint8_t slice_len = pEnd - pCol - 1; // there is one offset since we subtract the EndPos, not the last digit
-    *packetCounter = string_dec2uint((const unsigned char*)(pCol + 1), slice_len); // +1 since pCol points to ':'
-    
+    uint8_t slice_len = pEnd - pCol - 1;                                            // there is one offset since we subtract the EndPos, not the last digit
+    *packetCounter = string_dec2uint((const unsigned char *)(pCol + 1), slice_len); // +1 since pCol points to ':'
+
     return MIOTYATCLIENT_RETURN_CODE_OK;
 }
 
@@ -91,16 +92,16 @@ static miotyAtClient_returnCode _uni_fsm_receive_txa(bool txa_one_expected)
     }
 
     // validate if TXA was received
-    if (strstr((const char*)read_buffer, "TXA") == NULL)
+    if (strstr((const char *)read_buffer, "TXA") == NULL)
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
 
-    char* endString = txa_one_expected ? "\r\n" : "\r\n0\r\n"; // same reason as difference in buffersize
+    char *endString = txa_one_expected ? "\r\n" : "\r\n0\r\n"; // same reason as difference in buffersize
 
     // check the argument - is it a TXA 1?
-    char* pCol = strstr((const char *)read_buffer, (const char *)":");
-    char* pEnd = strstr((const char *)read_buffer, (const char *)endString);
+    char *pCol = strstr((const char *)read_buffer, (const char *)":");
+    char *pEnd = strstr((const char *)read_buffer, (const char *)endString);
     if (pCol == NULL || pEnd == NULL)
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
@@ -117,7 +118,7 @@ static miotyAtClient_returnCode _uni_fsm_receive_txa(bool txa_one_expected)
     {
         miotyAtClientTx_start_cb();
     }
-    else 
+    else
     {
         miotyatclientTx_stop_cb();
     }
@@ -164,23 +165,38 @@ static void get_MSTA(uint8_t *response_buf, uint8_t *MSTA)
         *MSTA = atoi(pos + 6);
 }
 
-// \todo check for sizeData>19
 // converts uint8_t data to hexadecimal string representation
 static bool write_cmd_bytes(uint8_t *AT_cmd, uint8_t sizeCmd, uint8_t *data, uint8_t sizeData)
 {
-    uint8_t digits = (sizeData) > 9 ? 1 : 0;
-    uint8_t const dataStringSize = 2 * sizeData;
-    // \todo check malloc
-    char dataString[dataStringSize];
-    string_byteArray2hex(data, sizeData, dataString, dataStringSize);
-    char cmd[sizeCmd + sizeof(dataString) + 5 + digits];
-    strcpy(cmd, AT_cmd);
-    cmd[sizeCmd] = '=';
-    string_uint2str_la_zt(sizeData, cmd + sizeCmd + 1);
-    cmd[sizeCmd + 2 + digits] = 0x09;
-    strcpy(cmd + sizeCmd + digits + 3, dataString);
-    cmd[sizeCmd + dataStringSize + digits + 3] = 0x1A;
-    cmd[sizeCmd + dataStringSize + digits + 4] = '\r';
+    // convert data size into string
+    uint32_t digits = 1; // smallest ammount of digits is 1 (even a 0 needs to be represented by one digit)
+    for (uint32_t size = sizeData; size /= 10; digits++)
+        ;
+    char data_size_string[digits + 1]; // +1 due to \0 termination
+    string_uint2str_la_zt(sizeCmd, data_size_string);
+
+    // convert payload into hex coded string
+    const uint32_t data_string_size = sizeData * 2; // hex representation
+    char data_string[data_string_size]; // string_byteArray2hex does not add zero termination!
+    string_byteArray2hex(data, sizeData, data_string, data_string_size);
+
+    // prepare command buffer
+    const uint32_t cmd_size = sizeCmd + digits + data_string_size + 4;
+    char cmd[cmd_size];
+    memset(cmd, 0, sizeof(cmd));
+
+    // assemble command
+    char *pWrite = cmd; // pointer to first char
+    memcpy(pWrite, AT_cmd, sizeCmd);
+    pWrite += sizeCmd;
+    *pWrite++ = '=';
+    memcpy(pWrite, data_size_string, digits);
+    pWrite += digits;
+    *pWrite++ = '\t';
+    memcpy(pWrite, data_string, data_string_size);
+    pWrite += data_string_size;
+    *pWrite++ = 0x1A;
+    *pWrite = '\r';
 
     return miotyAtClientWrite((uint8_t *)cmd, sizeof(cmd));
 }
@@ -243,7 +259,6 @@ static miotyAtClient_returnCode check_ATresponse(char *response_buf)
     return return_code;
 }
 
-
 static miotyAtClient_returnCode checkATresponseMsg(uint32_t *packetCounter)
 {
     char response_buf[200] = {0};
@@ -254,7 +269,6 @@ static miotyAtClient_returnCode checkATresponseMsg(uint32_t *packetCounter)
 
     return ret;
 }
-
 
 static miotyAtClient_returnCode get_int_data_ATresponse(uint8_t *AT_cmd, uint8_t sizeCmd, uint32_t *res, char *response_buf)
 {
@@ -571,7 +585,7 @@ miotyAtClient_returnCode miotyAtClient_sendMessageUni(uint8_t *msg, uint8_t size
     // miotyAtClientOnIdle(sizeMsg);
     // return checkATresponseMsg(packetCounter);
 
-    const char* at_cmd = "AT-U";
+    const char *at_cmd = "AT-U";
     if (write_cmd_bytes(at_cmd, sizeof(at_cmd), msg, sizeMsg) == false)
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
