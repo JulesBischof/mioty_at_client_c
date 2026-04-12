@@ -87,4 +87,7 @@ void serial_stub_reset(void)
     memset(read_vector, 0, sizeof(read_vector));
     read_vector_read_idx = 0;
     read_vector_write_idx = 0;
+
+    memset(write_buffer, 0, BUFFERSIZE);
+    write_buffer_watermark = 0;
 }

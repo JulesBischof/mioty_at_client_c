@@ -8,6 +8,12 @@
 #include "char_tools.h"
 #include "string_tools.h"
 
+typedef struct ReadVectorEntry_t
+{
+    char *buffer;
+    uint8_t len;
+} ReadVectorEntry_t;
+
 /* ============================
  * TEST inits
  * ============================ */
@@ -45,27 +51,27 @@ void miotyatclientTx_stop_cb(void)
  * TEST suites
  * ============================ */
 
-void test_at_client_formats_uni_message_correctly(void)
+void test_at_client_formats_uni_message_correctly_and_extracts_the_packet_counter(void)
 {
     // given that
-    char msg[] = {0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF};
+    char send_msg[] = {0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF};
 
     // fill read buffer
-    char *read_vector[] =
+    ReadVectorEntry_t read_vector[] =
         {
-            {"-MPCT:42\r\n"},
-            {"-TXA:1\r\n"},
-            {"-TXA:0\r\n0\r\n"},
-            NULL};
+            {"-MPCT:42\r\n", 10},
+            {"-TXA:1\r\n", 8},
+            {"-TXA:0\r\n0\r\n", 11},
+            {NULL, 0}};
 
-    for (uint32_t i = 0; read_vector[i] != NULL; i++)
+    for (uint32_t i = 0; read_vector[i].buffer != NULL; i++)
     {
-        serial_stub_push_to_read_vector(read_vector[i], strlen(read_vector[i]));
+        serial_stub_push_to_read_vector(read_vector[i].buffer, read_vector[i].len);
     }
 
     // run
     uint32_t packet_counter = 0;
-    miotyAtClient_returnCode r = miotyAtClient_sendMessageUni(msg, sizeof(msg), &packet_counter);
+    miotyAtClient_returnCode r = miotyAtClient_sendMessageUni(send_msg, sizeof(send_msg), &packet_counter);
 
     // then
     uint8_t expectation[] = "AT-U=8\t0123456789ABCDEF\x1A\r";
@@ -78,6 +84,40 @@ void test_at_client_formats_uni_message_correctly(void)
     TEST_ASSERT_EQUAL(42, packet_counter);
     TEST_ASSERT_EQUAL(result_len, sizeof(result));
     TEST_ASSERT_EQUAL_CHAR_ARRAY(expectation, result, result_len);
+}
+
+void test_eui64_request_can_get_received(void)
+{
+
+    // given that
+    ReadVectorEntry_t read_vector[] =
+        {
+            {"-MEUI:8\t123456789ABCDEF0\x1A\r\n\0\r\n", 30},
+            {NULL, 0}};
+
+    for (uint32_t i = 0; read_vector[i].buffer != NULL; i++)
+    {
+        serial_stub_push_to_read_vector(read_vector[i].buffer, read_vector[i].len);
+    }
+
+    // then
+    uint8_t eui64_result[8] = {0};
+    miotyAtClient_returnCode res = miotyAtClient_getOrSetEui(eui64_result, false);
+
+    // extract results
+    char write_expectation[] = "AT-MEUI?\r";
+    uint8_t expected_write_buffer_len = strlen(write_expectation);
+    char write_buffer[expected_write_buffer_len];
+    memset(write_buffer, 0, expected_write_buffer_len);
+
+    uint32_t result_len = 0;
+    serial_stub_get_write_buffer(write_buffer, expected_write_buffer_len, &result_len);
+
+    // assert
+    TEST_ASSERT(res == MIOTYATCLIENT_RETURN_CODE_OK);
+    TEST_ASSERT(result_len == expected_write_buffer_len);
+
+    TEST_ASSERT_EQUAL_CHAR_ARRAY(write_expectation, write_buffer, result_len);
 }
 
 // #endif // TEST
