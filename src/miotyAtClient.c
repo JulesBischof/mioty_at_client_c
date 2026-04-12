@@ -40,10 +40,21 @@ typedef enum PayloadType_t
     PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY
 } PayloadType_t;
 
+static uint8_t _digits_for_uint(uint32_t n)
+{
+    uint8_t d = 1;
+    while (n >= 10)
+    {
+        n /= 10;
+        d++;
+    }
+    return d;
+}
+
 static miotyAtClient_returnCode _receive_pattern_and_get_payload(const char *prefix, size_t prefix_len,
                                                                  const char *suffix, size_t suffix_len,
                                                                  void *pBuffer, size_t buffer_len,
-                                                                 PayloadType_t payload_type, uint32_t max_payload_lenth_bytes)
+                                                                 PayloadType_t payload_type, uint32_t max_payload_len_bytes)
 {
     // validation
     if (prefix == NULL || suffix == NULL || pBuffer == NULL)
@@ -52,18 +63,14 @@ static miotyAtClient_returnCode _receive_pattern_and_get_payload(const char *pre
     }
 
     // prepare read_buffer
-    uint8_t n_formatter_chars = 1;                         // for int: only ':'
-    if (payload_type == PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY) // for hex array: ':' and '\t' + the datasize field
-    {
-        // get n digits neccessary to represent the expected payload size
-        uint8_t digits = 1;
-        for (uint32_t num = max_payload_lenth_bytes; num /= 10; digits++)
-            ;
-        n_formatter_chars = 2 + digits;
-    }
+    uint8_t fmt_chars = (payload_type == PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY)
+                            ? (2 + _digits_for_uint(max_payload_len_bytes))
+                            : 1;
 
-    size_t read_buffer_size = prefix_len + suffix_len + (2 * max_payload_lenth_bytes) + n_formatter_chars;
-    uint8_t read_buffer[read_buffer_size + 1]; // +1 in order to provide \0 termination! (provide \0 in order to use strstr safely)
+    size_t read_buf_len = prefix_len + suffix_len +
+                          (2 * max_payload_len_bytes) + fmt_chars;
+
+    uint8_t read_buffer[read_buf_len + 1]; // +1 in order to provide \0 termination! (provide \0 in order to use strstr safely)
     memset(read_buffer, 0, sizeof(read_buffer));
 
     // read
@@ -73,8 +80,9 @@ static miotyAtClient_returnCode _receive_pattern_and_get_payload(const char *pre
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
 
-    if (sizeof(read_buffer) <= received_bytes) // validation - could be removed on release
+    if (received_bytes >= sizeof(read_buffer))
     {
+        // in production that should never happen - so exclude when goin to release build
         for (;;)
             ; // that would mean an ovverrun happened - block!
     }
@@ -89,46 +97,39 @@ static miotyAtClient_returnCode _receive_pattern_and_get_payload(const char *pre
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
 
-    char *pTab = NULL;
-    uint32_t datasize_slice_len = 0;
-    if (payload_type == PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY)
-    {
-        // bytes arrays always come with a tab <AT>:<size>\t<payload>\r\n
-        pTab = strstr(read_buffer, "\t");
-        if (pTab == NULL)
-        {
-            return MIOTYATCLIENT_RETURN_CODE_ERR;
-        }
-    }
-
-    char *pPayload = (payload_type == PAYLOAD_TYPE_INTEGER) ? (pCol + 1) : (pTab + 1);
-    uint32_t payload_slice_len = pSuffix - pPayload;
+    char *pPayload = NULL;
 
     if (payload_type == PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY)
-    {
-
-        // validate received ammount of data + buffer size
-        datasize_slice_len = pTab - pCol - 1;
-        uint32_t received_payload_len = string_dec2uint((const unsigned char *)(pCol + 1), datasize_slice_len);
-
-        if ((2 * received_payload_len != payload_slice_len) ||
-            (buffer_len < received_payload_len))
-        {
+    {   
+        // hex coded array
+        char *pTab = strchr(pCol, '\t');
+        if (!pTab)
             return MIOTYATCLIENT_RETURN_CODE_ERR;
-        }
 
-        // convert payload into hex coded string
-        char data_slice[payload_slice_len]; // string_byteArray2hex does not add zero termination!
+        uint32_t size_digits = pTab - (pCol + 1);
+        uint32_t declared_size = string_dec2uint((unsigned char*)(pCol + 1), size_digits);
+
+        uint32_t payload_slice_len = pSuffix - (pTab + 1);
+        if (payload_slice_len != declared_size * 2)
+            return MIOTYATCLIENT_RETURN_CODE_ERR;
+
+        if (buffer_len < declared_size)
+            return MIOTYATCLIENT_RETURN_CODE_ERR;
+
+        pPayload = pTab + 1;
         string_byteArray2hex(pPayload, payload_slice_len, pBuffer, buffer_len);
     }
     else
     {
+        // integer
+        pPayload = pCol + 1;
+        uint32_t payload_len = pSuffix - pPayload;
+
         if (buffer_len < sizeof(uint32_t))
-        {
             return MIOTYATCLIENT_RETURN_CODE_ERR;
-        }
-        uint32_t integer_payload = string_dec2uint((const unsigned char *)(pCol + 1), payload_slice_len);
-        *((uint32_t *)pBuffer) = integer_payload;
+
+        uint32_t value = string_dec2uint((unsigned char*)pPayload, payload_len);
+        *((uint32_t*)pBuffer) = value;
     }
 
     return MIOTYATCLIENT_RETURN_CODE_OK;
