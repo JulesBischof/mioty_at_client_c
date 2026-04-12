@@ -666,7 +666,8 @@ miotyAtClient_returnCode miotyAtClient_sendMessageUniTransparent(uint8_t *msg, u
 {
 #if LEGACY_MODE
     write_cmd_bytes("AT-TU", 5, msg, sizeMsg);
-    return checkATresponseMsg(packetCounter);
+    uint32_t packetCounter = 0;
+    return checkATresponseMsg(&packetCounter);
 #else
     const char at_cmd[] = "AT-TU";
     if (write_cmd_bytes(at_cmd, strlen(at_cmd), msg, sizeMsg) == false)
