@@ -30,8 +30,10 @@
 #include "miotyAtClient.h"
 #include "data_tools/string_tools.h"
 
+#define LEGACY_MODE (0)
+
 /* ====================================================
- * PRIVATES
+ * PRIVATE UTILS
  * ====================================================*/
 
 typedef enum PayloadType_t
@@ -51,13 +53,56 @@ static uint8_t _digits_for_uint(uint32_t n)
     return d;
 }
 
+static miotyAtClient_returnCode _parse_result_code(const char *buffer, uint32_t buffer_len)
+{
+    char suffix_error_none[] = "\r\n0";
+    char suffix_error_one[] = "\r\n1\r\n";
+    char suffix_error_two[] = "\r\n2\r\n";
+    char suffix_eof_not_reached_yet[] = "\r\n";
+
+    if (strstr(buffer, suffix_error_none) != NULL)
+    {
+        return MIOTYATCLIENT_RETURN_CODE_OK;
+    }
+    else if (strstr(buffer, suffix_error_one) != NULL)
+    {
+        char *err_pos = strstr(buffer, "-MNFO:");
+        if (err_pos == NULL)
+        {
+            err_pos = strstr(buffer, "-MERR:");
+        }
+        if (err_pos == NULL)
+        {
+            return MIOTYATCLIENT_RETURN_CODE_ERR;
+        }
+        return atoi(err_pos + 6); // 6 = size of both "-MNFO:" and "-MERR:"
+    }
+    else if (strstr(buffer, suffix_error_two) != NULL)
+    {
+        char err_prefix[] = "AT!ERR:";
+        char *err_pos = strstr(buffer, err_prefix);
+        if (err_pos == NULL)
+        {
+            return MIOTYATCLIENT_RETURN_CODE_ATErr;
+        }
+        err_pos += strlen(err_prefix);
+        return (atoi(err_pos + strlen(err_prefix)) + 16); // 16 = magic offset \TODO reference manual: where does it stem from
+    }
+    else if (strstr(buffer, suffix_eof_not_reached_yet) != NULL) // might be the case for e.g. "-TXA:1\rn"
+    {
+        return MIOTYATCLIENT_RETURN_CODE_NoEof;
+    }
+
+    return MIOTYATCLIENT_RETURN_CODE_ERR; // unknown suffix
+}
+
 static miotyAtClient_returnCode _receive_pattern_and_get_payload(const char *prefix, size_t prefix_len,
                                                                  const char *suffix, size_t suffix_len,
                                                                  void *pBuffer, size_t buffer_len,
                                                                  PayloadType_t payload_type, uint32_t max_payload_len_bytes)
 {
     // validation
-    if (prefix == NULL || suffix == NULL || pBuffer == NULL)
+    if (prefix == NULL || suffix == NULL)
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
@@ -80,11 +125,19 @@ static miotyAtClient_returnCode _receive_pattern_and_get_payload(const char *pre
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
 
+    // check for errors
+    miotyAtClient_returnCode parsed_err = _parse_result_code((const char *)read_buffer, sizeof(read_buffer));
+
+    if ((parsed_err != MIOTYATCLIENT_RETURN_CODE_NoEof &&
+         parsed_err != MIOTYATCLIENT_RETURN_CODE_OK) ||
+        pBuffer == NULL || buffer_len == 0) // if no buffer was provided - one might be only interested into "okay the Response was valid!"
+    {
+        return parsed_err;
+    }
+
     if (received_bytes >= sizeof(read_buffer))
     {
-        // in production that should never happen - so exclude when goin to release build
-        for (;;)
-            ; // that would mean an ovverrun happened - block!
+        return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
 
     // get payload slice
@@ -100,14 +153,14 @@ static miotyAtClient_returnCode _receive_pattern_and_get_payload(const char *pre
     char *pPayload = NULL;
 
     if (payload_type == PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY)
-    {   
+    {
         // hex coded array
         char *pTab = strchr(pCol, '\t');
         if (!pTab)
             return MIOTYATCLIENT_RETURN_CODE_ERR;
 
         uint32_t size_digits = pTab - (pCol + 1);
-        uint32_t declared_size = string_dec2uint((unsigned char*)(pCol + 1), size_digits);
+        uint32_t declared_size = string_dec2uint((unsigned char *)(pCol + 1), size_digits);
 
         uint32_t payload_slice_len = pSuffix - (pTab + 1);
         if (payload_slice_len != declared_size * 2)
@@ -128,137 +181,16 @@ static miotyAtClient_returnCode _receive_pattern_and_get_payload(const char *pre
         if (buffer_len < sizeof(uint32_t))
             return MIOTYATCLIENT_RETURN_CODE_ERR;
 
-        uint32_t value = string_dec2uint((unsigned char*)pPayload, payload_len);
-        *((uint32_t*)pBuffer) = value;
+        uint32_t value = string_dec2uint((unsigned char *)pPayload, payload_len);
+        *((uint32_t *)pBuffer) = value;
     }
 
     return MIOTYATCLIENT_RETURN_CODE_OK;
 }
 
-static miotyAtClient_returnCode _uni_fsm_receive_mpct(uint32_t *packetCounter)
-{
-    /*
-     * init read buffer ...
-     * REFERENCE MANUAL - PacketCounter is a 32 bit number: max 10 decimal digits!
-     * p.29: longest expected Message "-MPCT:<n>\r\n"
-     *
-     * Therefore: 18 bit deep buffer is sufficient
-     */
-
-    uint8_t read_buffer[18] = {0};
-    uint8_t received_bytes = 0;
-
-    if (miotyAtClientRead(read_buffer, sizeof(read_buffer), &received_bytes) != true)
-    {
-        return MIOTYATCLIENT_RETURN_CODE_ERR;
-    }
-
-    if (sizeof(read_buffer) <= received_bytes) // validation - could be removed on release
-    {
-        for (;;)
-            ; // that would mean an ovverrun happened - block!
-    }
-
-    // get the position of the col char and the "\r\n" and validate them
-    char *pCol = strstr((const char *)read_buffer, (const char *)":");
-    char *pEnd = strstr((const char *)read_buffer, (const char *)"\r\n");
-    if (pCol == NULL || pEnd == NULL)
-    {
-        return MIOTYATCLIENT_RETURN_CODE_ERR;
-    }
-    // convert to int
-    uint8_t slice_len = pEnd - pCol - 1;                                            // there is one offset since we subtract the EndPos, not the last digit
-    *packetCounter = string_dec2uint((const unsigned char *)(pCol + 1), slice_len); // +1 since pCol points to ':'
-
-    return MIOTYATCLIENT_RETURN_CODE_OK;
-}
-
-static miotyAtClient_returnCode _uni_fsm_receive_txa(bool txa_one_expected)
-{
-    uint8_t buffersize = txa_one_expected ? sizeof("-TXA:1\r\n") : sizeof("-TXA:0\r\n0\r\n");
-    buffersize--; // -1 due to strings get followed by a \0 we are not going to receive!
-    uint8_t read_buffer[buffersize];
-    memset(read_buffer, 0, sizeof(read_buffer)); // clear for now in order to debug but can be removed later
-    uint8_t received_bytes = 0;
-
-    // validation
-    if ((miotyAtClientRead(read_buffer, sizeof(read_buffer), &received_bytes) != true) ||
-        (received_bytes != buffersize) ||
-        (strstr((const char *)read_buffer, "TXA") == NULL))
-    {
-        return MIOTYATCLIENT_RETURN_CODE_ERR;
-    }
-
-    char *endString = txa_one_expected ? "\r\n" : "\r\n0\r\n"; // same reason as difference in buffersize
-
-    // check the argument - is it a TXA 1?
-    char *pCol = strstr((const char *)read_buffer, (const char *)":");
-    char *pEnd = strstr((const char *)read_buffer, (const char *)endString);
-    if (pCol == NULL || pEnd == NULL)
-    {
-        return MIOTYATCLIENT_RETURN_CODE_ERR;
-    }
-
-    char expectation = txa_one_expected ? '1' : '0';
-    if (*(pCol + 1) != expectation)
-    {
-        return MIOTYATCLIENT_RETURN_CODE_ERR;
-    }
-
-    // if code got here - everything was valid: run callbacks
-    if (txa_one_expected)
-    {
-        miotyAtClientTx_start_cb();
-    }
-    else
-    {
-        miotyatclientTx_stop_cb();
-    }
-
-    return MIOTYATCLIENT_RETURN_CODE_OK;
-}
-
-static miotyAtClient_returnCode _handle_uni_uplink_response_fsm(uint32_t *packetCounter)
-{
-    /* now receive the package counter & parse to an integer */
-    // if (_uni_fsm_receive_mpct(packetCounter) != MIOTYATCLIENT_RETURN_CODE_OK)
-    // {
-    //     return MIOTYATCLIENT_RETURN_CODE_ERR;
-    // }
-    char prefix[] = "-MPCT";
-    char suffix[] = "\r\n";
-    _receive_pattern_and_get_payload(prefix, strlen(prefix), suffix, strlen(suffix), packetCounter, sizeof(*packetCounter), PAYLOAD_TYPE_INTEGER, 10);
-
-    /* wait for the "TXA:1\r\n" (ack, that transmit has started) */
-    if (_uni_fsm_receive_txa(true) != MIOTYATCLIENT_RETURN_CODE_OK)
-    {
-        return MIOTYATCLIENT_RETURN_CODE_OK;
-    }
-
-    /* wait for the Transmission to be over: "TXA:0\r\n0\r\n" */
-    if (_uni_fsm_receive_txa(false) != MIOTYATCLIENT_RETURN_CODE_OK)
-    {
-        return MIOTYATCLIENT_RETURN_CODE_OK;
-    }
-
-    return MIOTYATCLIENT_RETURN_CODE_OK;
-}
-
-static void internalGetPacketCounter(char *response_buf, uint32_t *packetCounter)
-{
-    char *pos = strstr(response_buf, "-MPCT:");
-    if ((pos != NULL) && (packetCounter != NULL))
-    {
-        *packetCounter = atoi((pos + 6));
-    }
-}
-
-static void get_MSTA(uint8_t *response_buf, uint8_t *MSTA)
-{
-    char *pos = strstr(response_buf, "-MSTA:");
-    if (pos != NULL)
-        *MSTA = atoi(pos + 6);
-}
+/* ====================================================
+ * PRIVATE TX/RX ROUTINES
+ * ====================================================*/
 
 // converts uint8_t data to hexadecimal string representation
 static bool write_cmd_bytes(uint8_t *AT_cmd, uint8_t sizeCmd, uint8_t *data, uint8_t sizeData)
@@ -294,6 +226,70 @@ static bool write_cmd_bytes(uint8_t *AT_cmd, uint8_t sizeCmd, uint8_t *data, uin
     *pWrite = '\r';
 
     return miotyAtClientWrite((uint8_t *)cmd, sizeof(cmd));
+}
+
+static miotyAtClient_returnCode _handle_uni_uplink_response_fsm(uint32_t *packetCounter)
+{
+    /* now receive the package counter & parse to an integer */
+    char prefix_mpct[] = "-MPCT";
+    char suffix_part_msg[] = "\r\n";
+    if (_receive_pattern_and_get_payload(
+            prefix_mpct, strlen(prefix_mpct),
+            suffix_part_msg, strlen(suffix_part_msg),
+            packetCounter, sizeof(*packetCounter),
+            PAYLOAD_TYPE_INTEGER, 10) != MIOTYATCLIENT_RETURN_CODE_OK)
+    {
+        return MIOTYATCLIENT_RETURN_CODE_OK;
+    }
+
+    /* wait for the "TXA:1\r\n" (ack, that transmit has started) */
+    uint8_t txa_result = 0;
+    char prefix_txa[] = "-TXA";
+    if (_receive_pattern_and_get_payload(
+            prefix_txa, strlen(prefix_txa),
+            suffix_part_msg, strlen(suffix_part_msg),
+            &txa_result, sizeof(txa_result),
+            PAYLOAD_TYPE_INTEGER, 1) != MIOTYATCLIENT_RETURN_CODE_OK &&
+        txa_result != 1) // validate TXA<flag> in one call
+    {
+        return MIOTYATCLIENT_RETURN_CODE_OK;
+    }
+    miotyAtClientTx_start_cb();
+
+    /* wait for the Transmission to be over: "TXA:0\r\n0\r\n" */
+    char suffix_part_eof[] = "\r\n0\r\n";
+    if (_receive_pattern_and_get_payload(
+            prefix_txa, strlen(prefix_txa),
+            suffix_part_msg, strlen(suffix_part_msg),
+            &txa_result, sizeof(txa_result),
+            PAYLOAD_TYPE_INTEGER, 1) != MIOTYATCLIENT_RETURN_CODE_OK &&
+        txa_result != 0) // validate TXA<flag> in one call
+    {
+        return MIOTYATCLIENT_RETURN_CODE_OK;
+    }
+    miotyAtclientTx_stop_cb();
+
+    return MIOTYATCLIENT_RETURN_CODE_OK;
+}
+
+/* ====================================================
+ * LEGACY PRIVATES
+ * ====================================================*/
+
+static void internalGetPacketCounter(char *response_buf, uint32_t *packetCounter)
+{
+    char *pos = strstr(response_buf, "-MPCT:");
+    if ((pos != NULL) && (packetCounter != NULL))
+    {
+        *packetCounter = atoi((pos + 6));
+    }
+}
+
+static void get_MSTA(uint8_t *response_buf, uint8_t *MSTA)
+{
+    char *pos = strstr(response_buf, "-MSTA:");
+    if (pos != NULL)
+        *MSTA = atoi(pos + 6);
 }
 
 static miotyAtClient_returnCode check_ATresponse(char *response_buf)
@@ -523,20 +519,34 @@ static miotyAtClient_returnCode get_info_bytes(uint8_t *AT_cmd, uint8_t sizeCmd,
     cmd[sizeCmd] = '?';
     cmd[sizeCmd + 1] = '\r';
     miotyAtClientWrite((uint8_t *)cmd, sizeof(cmd));
-
+#if LEGACY_MODE
+    char response_buf[200];
+    return get_data_ATresponse(AT_cmd, sizeCmd, buffer, sizeBuf, response_buf);
+#else
     char *prefix = AT_cmd + 2; // get rid of the "AT" header
-    char suffix[] = "\x1A\r\n\0\r\n";
-    _receive_pattern_and_get_payload(prefix, strlen(prefix), suffix, sizeof(suffix) - 1, buffer, *sizeBuf, PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY, *sizeBuf);
-
-    // char response_buf[200];
-    // return get_data_ATresponse(AT_cmd, sizeCmd, buffer, sizeBuf, response_buf);
+    char suffix[] = "\x1A\r\n0\r\n";
+    return _receive_pattern_and_get_payload(prefix, strlen(prefix),
+                                            suffix, sizeof(suffix) - 1,
+                                            buffer, *sizeBuf,
+                                            PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY, *sizeBuf);
+#endif
 }
 
 static miotyAtClient_returnCode set_info_bytes(uint8_t *AT_cmd, uint8_t sizeCmd, uint8_t *data, uint8_t sizeData)
 {
     write_cmd_bytes(AT_cmd, sizeCmd, data, sizeData);
+#if LEGACY_MODE
     char response_buf[200];
     return check_ATresponse(response_buf);
+#else
+    char *prefix = AT_cmd + 2; // get rid of the "AT" header
+    char suffix[] = "\x1A\r\n0\r\n";
+    return _receive_pattern_and_get_payload(prefix, strlen(prefix),
+                                            suffix, sizeof(suffix) - 1,
+                                            NULL, 0, // no buffer: just check for the success marker
+                                            PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY, sizeData);
+    // TODO it could be validated, if the response holds the same value as sent to the myon device, since it answers with an echo
+#endif
 }
 
 miotyAtClient_returnCode get_info_int(uint8_t *AT_cmd, uint8_t sizeCmd, uint32_t *res)
@@ -674,23 +684,34 @@ miotyAtClient_returnCode miotyAtClient_sendMessageUniTransparent(uint8_t *msg, u
 
 miotyAtClient_returnCode miotyAtClient_sendMessageUniMPF(uint8_t *msg, uint8_t sizeMsg, uint32_t *packetCounter)
 {
+#if LEGACY_MODE
     write_cmd_bytes("AT-UMPF", 7, msg, sizeMsg);
     miotyAtClientOnIdle(sizeMsg);
     return checkATresponseMsg(packetCounter);
-}
-
-miotyAtClient_returnCode miotyAtClient_sendMessageUni(uint8_t *msg, uint8_t sizeMsg, uint32_t *packetCounter)
-{
-    // write_cmd_bytes("AT-U", 4, msg, sizeMsg);
-    // miotyAtClientOnIdle(sizeMsg);
-    // return checkATresponseMsg(packetCounter);
-
-    const char at_cmd[] = "AT-U";
-    if (write_cmd_bytes(at_cmd, sizeof(at_cmd) - 1, msg, sizeMsg) == false)
+#else
+    const char at_cmd[] = "AT-UMPF";
+    if (write_cmd_bytes(at_cmd, strlen(at_cmd), msg, sizeMsg) == false)
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
     return _handle_uni_uplink_response_fsm(packetCounter);
+#endif
+}
+
+miotyAtClient_returnCode miotyAtClient_sendMessageUni(uint8_t *msg, uint8_t sizeMsg, uint32_t *packetCounter)
+{
+#if LEGACY_MODE
+    write_cmd_bytes("AT-U", 4, msg, sizeMsg);
+    miotyAtClientOnIdle(sizeMsg);
+    return checkATresponseMsg(packetCounter);
+#else
+    const char at_cmd[] = "AT-U";
+    if (write_cmd_bytes(at_cmd, strlen(at_cmd), msg, sizeMsg) == false)
+    {
+        return MIOTYATCLIENT_RETURN_CODE_ERR;
+    }
+    return _handle_uni_uplink_response_fsm(packetCounter);
+#endif
 }
 
 miotyAtClient_returnCode miotyAtClient_sendMessageBidiTransparent(uint8_t *msg, uint8_t sizeMsg, uint8_t *data, uint8_t *size_data, uint32_t *packetCounter)

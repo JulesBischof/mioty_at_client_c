@@ -65,6 +65,8 @@ typedef enum miotyAtClient_returnCode {
     MIOTYATCLIENT_RETURN_CODE_ATUnexpectedChar,
     MIOTYATCLIENT_RETURN_CODE_ATArgInvalid, // 22
     MIOTYATCLIENT_RETURN_CODE_ATReadFailed,
+
+    MIOTYATCLIENT_RETURN_CODE_NoEof = -1,
 } miotyAtClient_returnCode;
 
 extern bool miotyAtClientWrite(uint8_t *, uint16_t);
@@ -75,7 +77,7 @@ extern bool miotyAtClientRead(uint8_t *, uint8_t, uint8_t *);
 extern void miotyAtClientOnIdle(uint32_t message_len);
 
 extern void miotyAtClientTx_start_cb(void);
-extern void miotyatclientTx_stop_cb(void);
+extern void miotyAtclientTx_stop_cb(void);
 
 
 

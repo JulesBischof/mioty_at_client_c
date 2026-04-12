@@ -43,7 +43,7 @@ void miotyAtClientTx_start_cb(void)
 {
 }
 
-void miotyatclientTx_stop_cb(void)
+void miotyAtclientTx_stop_cb(void)
 {
 }
 
@@ -92,7 +92,7 @@ void test_eui64_request_can_get_received(void)
     // given that
     ReadVectorEntry_t read_vector[] =
         {
-            {"-MEUI:8\t123456789ABCDEF0\x1A\r\n\0\r\n", 30},
+            {"-MEUI:8\t123456789ABCDEF0\x1A\r\n0\r\n", 30},
             {NULL, 0}};
 
     for (uint32_t i = 0; read_vector[i].buffer != NULL; i++)
