@@ -30,6 +30,8 @@
 #include "miotyAtClient.h"
 #include "data_tools/string_tools.h"
 
+#include <assert.h>
+
 #define LEGACY_MODE (0)
 
 /* ====================================================
@@ -195,6 +197,8 @@ static miotyAtClient_returnCode _receive_pattern_and_get_payload(const char *pre
 // converts uint8_t data to hexadecimal string representation
 static bool write_cmd_bytes(uint8_t *AT_cmd, uint8_t sizeCmd, uint8_t *data, uint8_t sizeData)
 {
+    assert(sizeData <= 200); // given by Mioty - maximum payload!
+
     // convert data size into string
     uint32_t digits = 1; // smallest ammount of digits is 1 (even a 0 needs to be represented by one digit)
     for (uint32_t size = sizeData; size /= 10; digits++)
@@ -230,16 +234,20 @@ static bool write_cmd_bytes(uint8_t *AT_cmd, uint8_t sizeCmd, uint8_t *data, uin
 
 static miotyAtClient_returnCode _handle_uni_uplink_response_fsm(uint32_t *packetCounter)
 {
-    /* now receive the package counter & parse to an integer */
-    char prefix_mpct[] = "-MPCT";
+
     char suffix_part_msg[] = "\r\n";
-    if (_receive_pattern_and_get_payload(
-            prefix_mpct, strlen(prefix_mpct),
-            suffix_part_msg, strlen(suffix_part_msg),
-            packetCounter, sizeof(*packetCounter),
-            PAYLOAD_TYPE_INTEGER, 10) != MIOTYATCLIENT_RETURN_CODE_OK)
+    if (packetCounter != NULL) // indicates if the receive is transparent or not
     {
-        return MIOTYATCLIENT_RETURN_CODE_OK;
+        /* now receive the package counter & parse to an integer */
+        char prefix_mpct[] = "-MPCT";
+        if (_receive_pattern_and_get_payload(
+                prefix_mpct, strlen(prefix_mpct),
+                suffix_part_msg, strlen(suffix_part_msg),
+                packetCounter, sizeof(*packetCounter),
+                PAYLOAD_TYPE_INTEGER, 10) != MIOTYATCLIENT_RETURN_CODE_OK)
+        {
+            return MIOTYATCLIENT_RETURN_CODE_OK;
+        }
     }
 
     /* wait for the "TXA:1\r\n" (ack, that transmit has started) */
@@ -633,14 +641,6 @@ miotyAtClient_returnCode miotyAtClient_getPacketCounter(uint32_t *counter)
     return get_info_int("AT-MPCT", 7, counter);
 }
 
-/* according to reference manual this: doesn't exist */
-// miotyAtClient_returnCode miotyAtClient_getOrSetBaudrate(uint32_t *baud, bool set)
-// {
-//     if (set)
-//         return set_info_int("AT+IPR", 6, baud);
-//     return get_info_int("AT+IPR", 6, baud);
-// }
-
 miotyAtClient_returnCode miotyAtClient_getOrSetTransmitPower(uint32_t *txPower, bool set)
 {
     if (set)
@@ -655,14 +655,6 @@ miotyAtClient_returnCode miotyAtClient_uplinkMode(uint32_t *ulMode, bool set)
     return get_info_int("AT-UM", 5, ulMode);
 }
 
-/* according to reference manual this: doesn't exist */
-// miotyAtClient_returnCode miotyAtClient_uplinkSyncBurst(uint32_t *ulSyncBurst, bool set)
-// {
-//     if (set)
-//         return set_info_int("AT-US", 5, ulSyncBurst);
-//     return get_info_int("AT-US", 5, ulSyncBurst);
-// }
-
 miotyAtClient_returnCode miotyAtClient_getOrSetuplinkProfile(uint32_t *ulProfile, bool set)
 {
     if (set)
@@ -670,32 +662,26 @@ miotyAtClient_returnCode miotyAtClient_getOrSetuplinkProfile(uint32_t *ulProfile
     return get_info_int("AT-UP", 5, ulProfile);
 }
 
-/* according to reference manual this: doesn't exist */
-// miotyAtClient_returnCode miotyAtClient_appCryptoMode(uint32_t *appCryptoMode, bool set)
-// {
-//     if (set)
-//         return set_info_int("AT-ACM", 6, appCryptoMode);
-//     return get_info_int("AT-ACM", 6, appCryptoMode);
-// }
-
-/* according to reference manual this: doesn't exist */
-// miotyAtClient_returnCode miotyAtClient_setAppCryptoKey(uint8_t *appCryptoKey)
-// {
-//     return set_info_bytes("AT-ACK", 6, appCryptoKey, 16);
-// }
-
-miotyAtClient_returnCode miotyAtClient_sendMessageUniTransparent(uint8_t *msg, uint8_t sizeMsg, uint32_t *packetCounter)
+miotyAtClient_returnCode miotyAtClient_sendMessageUniTransparent(uint8_t *msg, uint8_t sizeMsg)
 {
+#if LEGACY_MODE
     write_cmd_bytes("AT-TU", 5, msg, sizeMsg);
-    miotyAtClientOnIdle(sizeMsg);
     return checkATresponseMsg(packetCounter);
+#else
+    const char at_cmd[] = "AT-TU";
+    if (write_cmd_bytes(at_cmd, strlen(at_cmd), msg, sizeMsg) == false)
+    {
+        return MIOTYATCLIENT_RETURN_CODE_ERR;
+    }
+
+    return _handle_uni_uplink_response_fsm(NULL);
+#endif
 }
 
 miotyAtClient_returnCode miotyAtClient_sendMessageUniMPF(uint8_t *msg, uint8_t sizeMsg, uint32_t *packetCounter)
 {
 #if LEGACY_MODE
     write_cmd_bytes("AT-UMPF", 7, msg, sizeMsg);
-    miotyAtClientOnIdle(sizeMsg);
     return checkATresponseMsg(packetCounter);
 #else
     const char at_cmd[] = "AT-UMPF";
@@ -711,7 +697,6 @@ miotyAtClient_returnCode miotyAtClient_sendMessageUni(uint8_t *msg, uint8_t size
 {
 #if LEGACY_MODE
     write_cmd_bytes("AT-U", 4, msg, sizeMsg);
-    miotyAtClientOnIdle(sizeMsg);
     return checkATresponseMsg(packetCounter);
 #else
     const char at_cmd[] = "AT-U";
