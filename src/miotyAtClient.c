@@ -34,6 +34,106 @@
  * PRIVATES
  * ====================================================*/
 
+typedef enum PayloadType_t
+{
+    PAYLOAD_TYPE_INTEGER,
+    PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY
+} PayloadType_t;
+
+static miotyAtClient_returnCode _receive_pattern_and_get_payload(const char *prefix, size_t prefix_len,
+                                                                 const char *suffix, size_t suffix_len,
+                                                                 void *pBuffer, size_t buffer_len,
+                                                                 PayloadType_t payload_type, uint32_t max_payload_lenth_bytes)
+{
+    // validation
+    if (prefix == NULL || suffix == NULL || pBuffer == NULL)
+    {
+        return MIOTYATCLIENT_RETURN_CODE_ERR;
+    }
+
+    // prepare read_buffer
+    uint8_t n_formatter_chars = 1;                         // for int: only ':'
+    if (payload_type == PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY) // for hex array: ':' and '\t' + the datasize field
+    {
+        // get n digits neccessary to represent the expected payload size
+        uint8_t digits = 1;
+        for (uint32_t num = max_payload_lenth_bytes; num /= 10; digits++)
+            ;
+        n_formatter_chars = 2 + digits;
+    }
+
+    size_t read_buffer_size = prefix_len + suffix_len + (2 * max_payload_lenth_bytes) + n_formatter_chars;
+    uint8_t read_buffer[read_buffer_size + 1]; // +1 in order to provide \0 termination! (provide \0 in order to use strstr safely)
+    memset(read_buffer, 0, sizeof(read_buffer));
+
+    // read
+    uint8_t received_bytes = 0;
+    if (miotyAtClientRead(read_buffer, sizeof(read_buffer), &received_bytes) != true)
+    {
+        return MIOTYATCLIENT_RETURN_CODE_ERR;
+    }
+
+    if (sizeof(read_buffer) <= received_bytes) // validation - could be removed on release
+    {
+        for (;;)
+            ; // that would mean an ovverrun happened - block!
+    }
+
+    // get payload slice
+    char *pPrefix = strstr(read_buffer, prefix);
+    char *pSuffix = strstr(read_buffer, suffix);
+    char *pCol = strstr(read_buffer, ":");
+
+    if (pPrefix == NULL || pSuffix == NULL || pCol == NULL)
+    {
+        return MIOTYATCLIENT_RETURN_CODE_ERR;
+    }
+
+    char *pTab = NULL;
+    uint32_t datasize_slice_len = 0;
+    if (payload_type == PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY)
+    {
+        // bytes arrays always come with a tab <AT>:<size>\t<payload>\r\n
+        pTab = strstr(read_buffer, "\t");
+        if (pTab == NULL)
+        {
+            return MIOTYATCLIENT_RETURN_CODE_ERR;
+        }
+    }
+
+    char *pPayload = (payload_type == PAYLOAD_TYPE_INTEGER) ? (pCol + 1) : (pTab + 1);
+    uint32_t payload_slice_len = pSuffix - pPayload;
+
+    if (payload_type == PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY)
+    {
+
+        // validate received ammount of data + buffer size
+        datasize_slice_len = pTab - pCol - 1;
+        uint32_t received_payload_len = string_dec2uint((const unsigned char *)(pCol + 1), datasize_slice_len);
+
+        if ((2 * received_payload_len != payload_slice_len) ||
+            (buffer_len < received_payload_len))
+        {
+            return MIOTYATCLIENT_RETURN_CODE_ERR;
+        }
+
+        // convert payload into hex coded string
+        char data_slice[payload_slice_len]; // string_byteArray2hex does not add zero termination!
+        string_byteArray2hex(pPayload, payload_slice_len, pBuffer, buffer_len);
+    }
+    else
+    {
+        if (buffer_len < sizeof(uint32_t))
+        {
+            return MIOTYATCLIENT_RETURN_CODE_ERR;
+        }
+        uint32_t integer_payload = string_dec2uint((const unsigned char *)(pCol + 1), payload_slice_len);
+        *((uint32_t *)pBuffer) = integer_payload;
+    }
+
+    return MIOTYATCLIENT_RETURN_CODE_OK;
+}
+
 static miotyAtClient_returnCode _uni_fsm_receive_mpct(uint32_t *packetCounter)
 {
     /*
@@ -80,19 +180,10 @@ static miotyAtClient_returnCode _uni_fsm_receive_txa(bool txa_one_expected)
     memset(read_buffer, 0, sizeof(read_buffer)); // clear for now in order to debug but can be removed later
     uint8_t received_bytes = 0;
 
-    if (miotyAtClientRead(read_buffer, sizeof(read_buffer), &received_bytes) != true)
-    {
-        return MIOTYATCLIENT_RETURN_CODE_ERR;
-    }
-
-    // validate buffer_len - remove for release
-    if (received_bytes != buffersize)
-    {
-        return MIOTYATCLIENT_RETURN_CODE_ERR;
-    }
-
-    // validate if TXA was received
-    if (strstr((const char *)read_buffer, "TXA") == NULL)
+    // validation
+    if ((miotyAtClientRead(read_buffer, sizeof(read_buffer), &received_bytes) != true) ||
+        (received_bytes != buffersize) ||
+        (strstr((const char *)read_buffer, "TXA") == NULL))
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
@@ -129,10 +220,13 @@ static miotyAtClient_returnCode _uni_fsm_receive_txa(bool txa_one_expected)
 static miotyAtClient_returnCode _handle_uni_uplink_response_fsm(uint32_t *packetCounter)
 {
     /* now receive the package counter & parse to an integer */
-    if (_uni_fsm_receive_mpct(packetCounter) != MIOTYATCLIENT_RETURN_CODE_OK)
-    {
-        return MIOTYATCLIENT_RETURN_CODE_ERR;
-    }
+    // if (_uni_fsm_receive_mpct(packetCounter) != MIOTYATCLIENT_RETURN_CODE_OK)
+    // {
+    //     return MIOTYATCLIENT_RETURN_CODE_ERR;
+    // }
+    char prefix[] = "-MPCT";
+    char suffix[] = "\r\n";
+    _receive_pattern_and_get_payload(prefix, strlen(prefix), suffix, strlen(suffix), packetCounter, sizeof(*packetCounter), PAYLOAD_TYPE_INTEGER, 10);
 
     /* wait for the "TXA:1\r\n" (ack, that transmit has started) */
     if (_uni_fsm_receive_txa(true) != MIOTYATCLIENT_RETURN_CODE_OK)
@@ -177,7 +271,7 @@ static bool write_cmd_bytes(uint8_t *AT_cmd, uint8_t sizeCmd, uint8_t *data, uin
 
     // convert payload into hex coded string
     const uint32_t data_string_size = sizeData * 2; // hex representation
-    char data_string[data_string_size]; // string_byteArray2hex does not add zero termination!
+    char data_string[data_string_size];             // string_byteArray2hex does not add zero termination!
     string_byteArray2hex(data, sizeData, data_string, data_string_size);
 
     // prepare command buffer
@@ -428,8 +522,13 @@ static miotyAtClient_returnCode get_info_bytes(uint8_t *AT_cmd, uint8_t sizeCmd,
     cmd[sizeCmd] = '?';
     cmd[sizeCmd + 1] = '\r';
     miotyAtClientWrite((uint8_t *)cmd, sizeof(cmd));
-    char response_buf[200];
-    return get_data_ATresponse(AT_cmd, sizeCmd, buffer, sizeBuf, response_buf);
+
+    char *prefix = AT_cmd + 2; // get rid of the "AT" header
+    char suffix[] = "\x1A\r\n\0\r\n";
+    _receive_pattern_and_get_payload(prefix, strlen(prefix), suffix, sizeof(suffix) - 1, buffer, *sizeBuf, PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY, *sizeBuf);
+
+    // char response_buf[200];
+    // return get_data_ATresponse(AT_cmd, sizeCmd, buffer, sizeBuf, response_buf);
 }
 
 static miotyAtClient_returnCode set_info_bytes(uint8_t *AT_cmd, uint8_t sizeCmd, uint8_t *data, uint8_t sizeData)
