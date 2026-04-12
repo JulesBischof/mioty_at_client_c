@@ -164,15 +164,16 @@ miotyAtClient_returnCode miotyAtClient_getOrSetShortAdress(uint8_t * shortAdress
  */
 miotyAtClient_returnCode miotyAtClient_getOrSetTransmitPower(uint32_t * txPower, bool set);
 
-/**
- * @brief Get/Set modem Baudrate (AT+IPR)
- *
- * @param[in,out]   baud            Pointer to baudrate
- * @param[in]       set             If true baudrate will be set to *baud otherwise it will be written to *baud
- *
- * @return 
- */
-miotyAtClient_returnCode miotyAtClient_getOrSetBaudrate(uint32_t * baud, bool set);
+/* according to reference manual this: doesn't exist */
+// /**
+//  * @brief Get/Set modem Baudrate (AT+IPR)
+//  *
+//  * @param[in,out]   baud            Pointer to baudrate
+//  * @param[in]       set             If true baudrate will be set to *baud otherwise it will be written to *baud
+//  *
+//  * @return 
+//  */
+// miotyAtClient_returnCode miotyAtClient_getOrSetBaudrate(uint32_t * baud, bool set);
 
 /**
  * @brief Send AT command to get the current packet counter (AT-MPCT)
@@ -194,15 +195,16 @@ miotyAtClient_returnCode miotyAtClient_getPacketCounter(uint32_t * counter);
  */
 miotyAtClient_returnCode miotyAtClient_uplinkMode(uint32_t * ulMode, bool set);
 
-/**
- * @brief Get/Set uplink SyncBurst (AT-US)
- *
- * @param[in,out] ulSyncBurst   uplink SyncBurst to set or get from the MIOTY modem
- * @param[in]     set           If true the uplink SyncBurst of the MIOTY modem will be set to ulSyncBurst, else it will be read from the modem and written to ulSyncBurst
- *
- * @return      miotyAtClient_returnCode    indicating success/error of AT_cmd execution
- */
-miotyAtClient_returnCode miotyAtClient_uplinkSyncBurst(uint32_t * ulSyncBurst, bool set);
+/* according to reference manual this: doesn't exist */
+// /**
+//  * @brief Get/Set uplink SyncBurst (AT-US)
+//  *
+//  * @param[in,out] ulSyncBurst   uplink SyncBurst to set or get from the MIOTY modem
+//  * @param[in]     set           If true the uplink SyncBurst of the MIOTY modem will be set to ulSyncBurst, else it will be read from the modem and written to ulSyncBurst
+//  *
+//  * @return      miotyAtClient_returnCode    indicating success/error of AT_cmd execution
+//  */
+// miotyAtClient_returnCode miotyAtClient_uplinkSyncBurst(uint32_t * ulSyncBurst, bool set);
 
 /**
  * @brief Get/Set uplink Profile (AT-UP)
@@ -212,26 +214,28 @@ miotyAtClient_returnCode miotyAtClient_uplinkSyncBurst(uint32_t * ulSyncBurst, b
  *
  * @return      miotyAtClient_returnCode    indicating success/error of AT_cmd execution
  */
-miotyAtClient_returnCode miotyAtClient_uplinkProfile(uint32_t * ulProfile, bool set);
+miotyAtClient_returnCode miotyAtClient_getOrSetuplinkProfile(uint32_t * ulProfile, bool set);
 
-/**
- * @brief Get/Set application Crypto Mode (AT-ACM)
- *
- * @param[in,out] appCyrptoMode    application Crypto Mode to set or get from the MIOTY modem
- * @param[in]     set              If true the application Crypto Mode of the MIOTY modem will be set to appCyrptoMode, else it will be read from the modem and written to appCyrptoMode
- *
- * @return      miotyAtClient_returnCode    indicating success/error of AT_cmd execution
- */
-miotyAtClient_returnCode miotyAtClient_appCryptoMode(uint32_t * appCyrptoMode, bool set);
+/* according to reference manual this: doesn't exist */
+// /**
+//  * @brief Get/Set application Crypto Mode (AT-ACM)
+//  *
+//  * @param[in,out] appCyrptoMode    application Crypto Mode to set or get from the MIOTY modem
+//  * @param[in]     set              If true the application Crypto Mode of the MIOTY modem will be set to appCyrptoMode, else it will be read from the modem and written to appCyrptoMode
+//  *
+//  * @return      miotyAtClient_returnCode    indicating success/error of AT_cmd execution
+//  */
+// miotyAtClient_returnCode miotyAtClient_appCryptoMode(uint32_t * appCyrptoMode, bool set);
 
-/**
- * @brief Set the application crypto key (AT-ACK)
- *
- * @param[in,out] appCryptoKey  Pointer to a buffer containing the 16 byte long application crypto key
- *
- * @return      miotyAtClient_returnCode    indicating success/error of AT_cmd execution
- */
-miotyAtClient_returnCode miotyAtClient_setAppCryptoKey(uint8_t * appCryptoKey);
+/* according to reference manual this: doesn't exist */
+// /**
+//  * @brief Set the application crypto key (AT-ACK)
+//  *
+//  * @param[in,out] appCryptoKey  Pointer to a buffer containing the 16 byte long application crypto key
+//  *
+//  * @return      miotyAtClient_returnCode    indicating success/error of AT_cmd execution
+//  */
+// miotyAtClient_returnCode miotyAtClient_setAppCryptoKey(uint8_t * appCryptoKey);
 
 /*!
  * \brief Send uni-directional message (AT-UMPF)

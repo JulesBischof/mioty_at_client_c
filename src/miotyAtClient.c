@@ -580,18 +580,23 @@ miotyAtClient_returnCode set_info_int(uint8_t *AT_cmd, uint8_t sizeCmd, uint32_t
 
 miotyAtClient_returnCode miotyAtClient_reset(void)
 {
-    char cmd[7] = "AT-RST\r";
-    miotyAtClientWrite((uint8_t *)cmd, sizeof(cmd));
-    char response_buf[200];
-    return check_ATresponse(response_buf);
+    char cmd[] = "AT-RST\r";
+    return miotyAtClientWrite((uint8_t *)cmd, strlen(cmd)) ? MIOTYATCLIENT_RETURN_CODE_OK : MIOTYATCLIENT_RETURN_CODE_ERR;
+    // no response
 }
 
 miotyAtClient_returnCode miotyAtClient_factoryReset(void)
 {
-    char cmd[4] = "ATZ\r";
-    miotyAtClientWrite((uint8_t *)cmd, sizeof(cmd));
-    char response_buf[200];
-    return check_ATresponse(response_buf);
+    char cmd[] = "ATZ\r";
+    return miotyAtClientWrite((uint8_t *)cmd, strlen(cmd)) ? MIOTYATCLIENT_RETURN_CODE_OK : MIOTYATCLIENT_RETURN_CODE_ERR;
+    // no response
+}
+
+miotyAtClient_returnCode miotyAtCleint_modemShutdown(void)
+{
+    char cmd[] = "AT-RST\r";
+    return miotyAtClientWrite((uint8_t *)cmd, strlen(cmd)) ? MIOTYATCLIENT_RETURN_CODE_OK : MIOTYATCLIENT_RETURN_CODE_ERR;
+    // no response
 }
 
 miotyAtClient_returnCode miotyAtClient_setNetworkKey(uint8_t *nwKey)
@@ -628,12 +633,13 @@ miotyAtClient_returnCode miotyAtClient_getPacketCounter(uint32_t *counter)
     return get_info_int("AT-MPCT", 7, counter);
 }
 
-miotyAtClient_returnCode miotyAtClient_getOrSetBaudrate(uint32_t *baud, bool set)
-{
-    if (set)
-        return set_info_int("AT+IPR", 6, baud);
-    return get_info_int("AT+IPR", 6, baud);
-}
+/* according to reference manual this: doesn't exist */
+// miotyAtClient_returnCode miotyAtClient_getOrSetBaudrate(uint32_t *baud, bool set)
+// {
+//     if (set)
+//         return set_info_int("AT+IPR", 6, baud);
+//     return get_info_int("AT+IPR", 6, baud);
+// }
 
 miotyAtClient_returnCode miotyAtClient_getOrSetTransmitPower(uint32_t *txPower, bool set)
 {
@@ -649,31 +655,34 @@ miotyAtClient_returnCode miotyAtClient_uplinkMode(uint32_t *ulMode, bool set)
     return get_info_int("AT-UM", 5, ulMode);
 }
 
-miotyAtClient_returnCode miotyAtClient_uplinkSyncBurst(uint32_t *ulSyncBurst, bool set)
-{
-    if (set)
-        return set_info_int("AT-US", 5, ulSyncBurst);
-    return get_info_int("AT-US", 5, ulSyncBurst);
-}
+/* according to reference manual this: doesn't exist */
+// miotyAtClient_returnCode miotyAtClient_uplinkSyncBurst(uint32_t *ulSyncBurst, bool set)
+// {
+//     if (set)
+//         return set_info_int("AT-US", 5, ulSyncBurst);
+//     return get_info_int("AT-US", 5, ulSyncBurst);
+// }
 
-miotyAtClient_returnCode miotyAtClient_uplinkProfile(uint32_t *ulProfile, bool set)
+miotyAtClient_returnCode miotyAtClient_getOrSetuplinkProfile(uint32_t *ulProfile, bool set)
 {
     if (set)
         return set_info_int("AT-UP", 5, ulProfile);
     return get_info_int("AT-UP", 5, ulProfile);
 }
 
-miotyAtClient_returnCode miotyAtClient_appCryptoMode(uint32_t *appCryptoMode, bool set)
-{
-    if (set)
-        return set_info_int("AT-ACM", 6, appCryptoMode);
-    return get_info_int("AT-ACM", 6, appCryptoMode);
-}
+/* according to reference manual this: doesn't exist */
+// miotyAtClient_returnCode miotyAtClient_appCryptoMode(uint32_t *appCryptoMode, bool set)
+// {
+//     if (set)
+//         return set_info_int("AT-ACM", 6, appCryptoMode);
+//     return get_info_int("AT-ACM", 6, appCryptoMode);
+// }
 
-miotyAtClient_returnCode miotyAtClient_setAppCryptoKey(uint8_t *appCryptoKey)
-{
-    return set_info_bytes("AT-ACK", 6, appCryptoKey, 16);
-}
+/* according to reference manual this: doesn't exist */
+// miotyAtClient_returnCode miotyAtClient_setAppCryptoKey(uint8_t *appCryptoKey)
+// {
+//     return set_info_bytes("AT-ACK", 6, appCryptoKey, 16);
+// }
 
 miotyAtClient_returnCode miotyAtClient_sendMessageUniTransparent(uint8_t *msg, uint8_t sizeMsg, uint32_t *packetCounter)
 {
