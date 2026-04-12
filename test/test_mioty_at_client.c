@@ -34,11 +34,6 @@ void tearDown(void)
 /* ============================
  * TEST local stubs
  * ============================ */
-void miotyAtClientOnIdle(uint32_t message_len)
-{
-    printf("IDLE cb");
-}
-
 void miotyAtClientTx_start_cb(void)
 {
 }
