@@ -1,16 +1,20 @@
 #include "serial_stub.h"
-#include <stdio.h>
 #include <string.h>
 
 #include "unity.h"
 
-#define STATIC_BUFFERSIZE (256)
+typedef struct ReadVectorEntry_t
+{
+    uint8_t buffer[BUFFERSIZE];
+    size_t len;
+} ReadVectorEntry_t;
 
-static char write_buffer[STATIC_BUFFERSIZE] = {0};
+static char write_buffer[BUFFERSIZE] = {0};
 static uint32_t write_buffer_watermark = 0;
 
-static char read_buffer[STATIC_BUFFERSIZE] = {0};
-static uint32_t read_buffer_watermark = 0;
+static ReadVectorEntry_t read_vector[READ_VECTOR_LENGTH] = {0};
+static size_t read_vector_read_idx = 0;
+static size_t read_vector_write_idx = 0;
 
 static bool shall_trigger_error = false;
 
@@ -21,23 +25,9 @@ bool miotyAtClientWrite(uint8_t *msg, uint16_t msg_len)
         return false;
     }
 
-    if (msg == NULL)
-    {
-        printf("[miotyAtClientWrite] - BUFFER WAS NULL");
-        TEST_ASSERT(false);
-    }
-
-    if (msg_len == 0)
-    {
-        printf("[miotyAtClientWrite] - buffer_len WAS 0");
-        TEST_ASSERT(false);
-    }
-
-    if ((write_buffer_watermark + msg_len) > STATIC_BUFFERSIZE)
-    {
-        printf("WRITER TEST BUFFER IS TOO SMALL - unit wants to write %d Bytes", msg_len);
-        TEST_ASSERT(false);
-    }
+    TEST_ASSERT_NOT_NULL_MESSAGE(msg, "[miotyAtClientWrite] msg was NULL");
+    TEST_ASSERT_MESSAGE(msg_len, "[miotyAtClientWrite] msg_len was 0");
+    TEST_ASSERT_MESSAGE(BUFFERSIZE > (write_buffer_watermark + msg_len), "[miotyAtClientwrite] Write buffer is to small, increase BUFFERSIZE");
 
     write_buffer_watermark += msg_len;
     memcpy(write_buffer, msg, msg_len);
@@ -51,26 +41,16 @@ bool miotyAtClientRead(uint8_t *buffer, uint8_t buffer_len, uint8_t *p_len)
         return false;
     }
 
-    if (buffer == NULL)
-    {
-        printf("[miotyAtClientRead] BUFFER WAS NULL");
-        TEST_ASSERT(false);
-    }
+    TEST_ASSERT_NOT_NULL_MESSAGE(buffer, "[miotyAtClientRead] BUFFER was NULL");
+    TEST_ASSERT_NOT_NULL_MESSAGE(p_len, "[miotyAtClientRead] BUFFER was NULL");
+    TEST_ASSERT_MESSAGE(read_vector[read_vector_read_idx].len <= buffer_len, "[miotyAtClientRead] Provided buffer is too small");
+    TEST_ASSERT_MESSAGE(read_vector_read_idx < read_vector_write_idx, "[miotyAtClientRead] read vector is EMPTY");
 
-    if (p_len == NULL)
-    {
-        printf("[miotyAtClientRead] P_LEN WAS NULL");
-        TEST_ASSERT(false);
-    }
+    memcpy(buffer, read_vector[read_vector_read_idx].buffer, read_vector[read_vector_read_idx].len);
+    *p_len = read_vector[read_vector_read_idx].len;
 
-    if (buffer_len < read_buffer_watermark)
-    {
-        printf("[miotyAtClientRead] PROVIDED BUFFER WAS TOO SMALL ");
-        TEST_ASSERT(false);
-    }
+    read_vector_read_idx++;
 
-    memcpy(buffer, read_buffer, read_buffer_watermark);
-    *p_len = read_buffer_watermark;
     return true;
 }
 
@@ -78,47 +58,33 @@ bool miotyAtClientRead(uint8_t *buffer, uint8_t buffer_len, uint8_t *p_len)
 
 void serial_stub_get_write_buffer(char *buffer, uint8_t len, uint32_t *watermark)
 {
-    if (write_buffer_watermark == 0)
-    {
-        printf("WRITE BUFFER WAS EMPTY");
-        TEST_ASSERT(false);
-    }
-
-    if (write_buffer_watermark > len)
-    {
-        printf("PROVIDE BIGGER BUFFER");
-        TEST_ASSERT(false);
-    }
-
-    if (buffer == NULL)
-    {
-        printf("BUFFER IS NULL");
-        TEST_ASSERT(false);
-    }
+    TEST_ASSERT_NOT_NULL_MESSAGE(buffer, "[serial_stub_get_write_buffer] BUFFER was NULL");
+    TEST_ASSERT_NOT_NULL_MESSAGE(watermark, "[serial_stub_get_write_buffer] watermark was NULL");
+    TEST_ASSERT_MESSAGE(write_buffer_watermark <= len, "[serial_stub_get_write_buffer] provided buffer was too small");
 
     *watermark = write_buffer_watermark;
     memcpy(buffer, write_buffer, write_buffer_watermark);
 }
 
-void serial_stub_set_read_buffer(char *buffer, uint8_t len)
+void serial_stub_push_to_read_vector(char *buffer, uint8_t len)
 {
-    if (buffer == NULL)
-    {
-        printf("BUFFER IS NULL");
-        TEST_ASSERT(false);
-    }
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_MESSAGE(len, "provided length was 0");
+    TEST_ASSERT_MESSAGE(BUFFERSIZE > len, "increase BUFFERSIZE - message to push is too long");
 
-    if (len > STATIC_BUFFERSIZE)
-    {
-        printf("PROVIDE BIGGER READ BUFFER");
-        TEST_ASSERT(false);
-    }
-
-    read_buffer_watermark += len;
-    memcpy(read_buffer, buffer, len);
+    memcpy(read_vector[read_vector_write_idx].buffer, buffer, len);
+    read_vector[read_vector_write_idx].len = len;
+    read_vector_write_idx++;
 }
 
 void serial_stub_next_call_shall_trigger_error(bool flag)
 {
     shall_trigger_error = flag;
+}
+
+void serial_stub_reset(void)
+{
+    memset(read_vector, 0, sizeof(read_vector));
+    read_vector_read_idx = 0;
+    read_vector_write_idx = 0;
 }
