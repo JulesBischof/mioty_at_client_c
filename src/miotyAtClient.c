@@ -115,7 +115,7 @@ static miotyAtClient_returnCode _receive_pattern_and_get_payload(const char *pre
                             : 1;
 
     size_t read_buf_len = prefix_len + suffix_len +
-                          (2 * max_payload_len_bytes) + fmt_chars;
+                          (2 * max_payload_len_bytes) + fmt_chars + 2; // + 2 in order to allow "missalignment garbage bytes" -> increases implememntation stability
 
     uint8_t read_buffer[read_buf_len + 1]; // +1 in order to provide \0 termination! (provide \0 in order to use strstr safely)
     memset(read_buffer, 0, sizeof(read_buffer));
@@ -164,7 +164,7 @@ static miotyAtClient_returnCode _receive_pattern_and_get_payload(const char *pre
         uint32_t size_digits = pTab - (pCol + 1);
         uint32_t declared_size = string_dec2uint((unsigned char *)(pCol + 1), size_digits);
 
-        uint32_t payload_slice_len = pSuffix - (pTab + 1);
+        uint8_t payload_slice_len = pSuffix - (pTab + 1);
         if (payload_slice_len != declared_size * 2)
             return MIOTYATCLIENT_RETURN_CODE_ERR;
 
@@ -172,7 +172,7 @@ static miotyAtClient_returnCode _receive_pattern_and_get_payload(const char *pre
             return MIOTYATCLIENT_RETURN_CODE_ERR;
 
         pPayload = pTab + 1;
-        string_byteArray2hex(pPayload, payload_slice_len, pBuffer, buffer_len);
+        string_hex2byteArray((unsigned char const *)pPayload, (uint8_t const)payload_slice_len, pBuffer, buffer_len);
     }
     else
     {
@@ -275,7 +275,7 @@ static miotyAtClient_returnCode _handle_uni_uplink_response_fsm(uint32_t *packet
     {
         return MIOTYATCLIENT_RETURN_CODE_OK;
     }
-    miotyAtclientTx_stop_cb();
+    miotyAtClientTx_stop_cb();
 
     return MIOTYATCLIENT_RETURN_CODE_OK;
 }
@@ -523,7 +523,7 @@ static miotyAtClient_returnCode get_data_ATresponse(uint8_t *AT_cmd, uint8_t siz
 static miotyAtClient_returnCode get_info_bytes(uint8_t *AT_cmd, uint8_t sizeCmd, uint8_t *buffer, uint8_t *sizeBuf)
 {
     char cmd[sizeCmd + 2];
-    strcpy(cmd, AT_cmd);
+    memcpy(cmd, AT_cmd, sizeCmd);
     cmd[sizeCmd] = '?';
     cmd[sizeCmd + 1] = '\r';
     miotyAtClientWrite((uint8_t *)cmd, sizeof(cmd));
@@ -531,12 +531,14 @@ static miotyAtClient_returnCode get_info_bytes(uint8_t *AT_cmd, uint8_t sizeCmd,
     char response_buf[200];
     return get_data_ATresponse(AT_cmd, sizeCmd, buffer, sizeBuf, response_buf);
 #else
-    char *prefix = AT_cmd + 2; // get rid of the "AT" header
+    char *prefix = (char *)AT_cmd + 2;
     char suffix[] = "\x1A\r\n0\r\n";
-    return _receive_pattern_and_get_payload(prefix, strlen(prefix),
+
+    return _receive_pattern_and_get_payload(prefix, sizeCmd - 2,
                                             suffix, sizeof(suffix) - 1,
                                             buffer, *sizeBuf,
-                                            PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY, *sizeBuf);
+                                            PAYLOAD_TYPE_HEX_CODED_BYTE_ARRAY,
+                                            *sizeBuf);
 #endif
 }
 

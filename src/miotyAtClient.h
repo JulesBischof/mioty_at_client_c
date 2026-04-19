@@ -26,6 +26,8 @@
  * \version     0.0.1
  * \brief       Client side of communication with a MIOTY™ modem via AT protocol v2.x.x
  */
+#ifndef _AT_CLIENT_H
+#define _AT_CLIENT_H
 
 #include <stdint.h>
 #include <ctype.h>
@@ -33,13 +35,13 @@
 #include <stdbool.h>
 #include <string.h>
 
-#ifndef _AT_CLIENT_H
-#define _AT_CLIENT_H
-
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
+#define MYON_PROPERTY_GET (false)
+#define MYON_PROPERTY_SET (true)
 
     typedef enum miotyAtClient_returnCode
     {
@@ -77,7 +79,7 @@ extern "C"
 
     /* These callbacks get called, when a Transmition is ongoing (e.g. on Uni-Uplink) */
     extern void miotyAtClientTx_start_cb(void);
-    extern void miotyAtclientTx_stop_cb(void);
+    extern void miotyAtClientTx_stop_cb(void);
 
     /**
      * @brief Soft reset of the MIOTY™ modem. Persistent fields shall keep their current value.
@@ -91,24 +93,6 @@ extern "C"
      * @return
      */
     miotyAtClient_returnCode miotyAtClient_factoryReset(void); // ATZ
-
-    /**
-     * @brief Set Factory Defaults of the MITOY™ modem (only usable if factory defaults are not set) (AT-DEF)
-     *
-     * @param eui64             8-byte long EUI
-     * @param ipv6              8-byte IPv6 Subnet Mask
-     * @param nwKey             16-byte Network Key
-     * @param shortAdress       2-byte Short Adress
-     * @param appCryptoKey      16-byte Application Crypto Key
-     * @param ulProfile         uplink Profile (0-3/EU0-US0)
-     * @param ulMode            uplink Mode (0-2)
-     * @param ulSyncBurst       uplink Syncronization Burst enable (0/1)
-     * @param appCryptoMode     Application Crypto Mode (0/1)
-     * @param attached1stBoot   Node attached on first Boot (0/1)
-     *
-     * @return
-     */
-    miotyAtClient_returnCode miotyAtClient_setDefaults(uint8_t *eui64, uint8_t *ipv6, uint8_t *nwKey, uint8_t *shortAdress, uint8_t *appCryptoKey, uint8_t ulProfile, uint8_t ulMode, uint8_t ulSyncBurst, uint8_t appCryptoMode, uint8_t attached1stBoot);
 
     /**
      * @brief Send AT command to set the network key (AT-MNWK)
@@ -193,7 +177,7 @@ extern "C"
     miotyAtClient_returnCode miotyAtClient_getOrSetuplinkProfile(uint32_t *ulProfile, bool set);
 
     /*!
-     * \brief Send uni-directional message with Uplink MPF Field (AT-UMPF) 
+     * \brief Send uni-directional message with Uplink MPF Field (AT-UMPF)
      *
      * \param[in]       msg             Pointer to message to be send (including MPF field)
      * \param[in]       sizemsg         Size of msg

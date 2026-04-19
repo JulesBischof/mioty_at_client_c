@@ -38,7 +38,7 @@ void miotyAtClientTx_start_cb(void)
 {
 }
 
-void miotyAtclientTx_stop_cb(void)
+void miotyAtClientTx_stop_cb(void)
 {
 }
 
