@@ -197,6 +197,7 @@ extern "C"
      * \return          miotyAtClient_returnCode    indicating success/error of AT_cmd execution
      */
     miotyAtClient_returnCode miotyAtClient_sendMessageUni(uint8_t *msg, uint8_t sizeMsg, uint32_t *packetCounter);
+    miotyAtClient_returnCode miotyAtClient_sendMessageUniOpt(uint8_t *msg, uint8_t sizeMsg, uint32_t *packetCounter);
 
     /*!
      * \brief Send bi-directional message (AT-BMPF)

@@ -232,7 +232,7 @@ static bool write_cmd_bytes(uint8_t *AT_cmd, uint8_t sizeCmd, uint8_t *data, uin
     return miotyAtClientWrite((uint8_t *)cmd, sizeof(cmd));
 }
 
-static miotyAtClient_returnCode _handle_uni_uplink_response_fsm(uint32_t *packetCounter)
+static miotyAtClient_returnCode _handle_uni_uplink_response_fsm(uint32_t *packetCounter, bool wait_for_msg_end)
 {
 
     char suffix_part_msg[] = "\r\n";
@@ -264,18 +264,22 @@ static miotyAtClient_returnCode _handle_uni_uplink_response_fsm(uint32_t *packet
     }
     miotyAtClientTx_start_cb();
 
-    /* wait for the Transmission to be over: "TXA:0\r\n0\r\n" */
-    char suffix_part_eof[] = "\r\n0\r\n";
-    if (_receive_pattern_and_get_payload(
-            prefix_txa, strlen(prefix_txa),
-            suffix_part_msg, strlen(suffix_part_msg),
-            &txa_result, sizeof(txa_result),
-            PAYLOAD_TYPE_INTEGER, 1) != MIOTYATCLIENT_RETURN_CODE_OK &&
-        txa_result != 0) // validate TXA<flag> in one call
+    if (wait_for_msg_end)
     {
-        return MIOTYATCLIENT_RETURN_CODE_OK;
+        /* wait for the Transmission to be over: "TXA:0\r\n0\r\n" */
+        char suffix_part_eof[] = "\r\n0\r\n";
+        if (_receive_pattern_and_get_payload(
+                prefix_txa, strlen(prefix_txa),
+                suffix_part_msg, strlen(suffix_part_msg),
+                &txa_result, sizeof(txa_result),
+                PAYLOAD_TYPE_INTEGER, 1) != MIOTYATCLIENT_RETURN_CODE_OK &&
+            txa_result != 0) // validate TXA<flag> in one call
+        {
+            return MIOTYATCLIENT_RETURN_CODE_OK;
+        }
+
+        miotyAtClientTx_stop_cb();
     }
-    miotyAtClientTx_stop_cb();
 
     return MIOTYATCLIENT_RETURN_CODE_OK;
 }
@@ -677,7 +681,7 @@ miotyAtClient_returnCode miotyAtClient_sendMessageUniTransparent(uint8_t *msg, u
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
 
-    return _handle_uni_uplink_response_fsm(NULL);
+    return _handle_uni_uplink_response_fsm(NULL, true);
 #endif
 }
 
@@ -692,7 +696,7 @@ miotyAtClient_returnCode miotyAtClient_sendMessageUniMPF(uint8_t *msg, uint8_t s
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
-    return _handle_uni_uplink_response_fsm(packetCounter);
+    return _handle_uni_uplink_response_fsm(packetCounter, true);
 #endif
 }
 
@@ -707,8 +711,18 @@ miotyAtClient_returnCode miotyAtClient_sendMessageUni(uint8_t *msg, uint8_t size
     {
         return MIOTYATCLIENT_RETURN_CODE_ERR;
     }
-    return _handle_uni_uplink_response_fsm(packetCounter);
+    return _handle_uni_uplink_response_fsm(packetCounter, true);
 #endif
+}
+
+miotyAtClient_returnCode miotyAtClient_sendMessageUniOpt(uint8_t *msg, uint8_t sizeMsg, uint32_t *packetCounter)
+{
+    const char at_cmd[] = "AT-U";
+    if (write_cmd_bytes(at_cmd, strlen(at_cmd), msg, sizeMsg) == false)
+    {
+        return MIOTYATCLIENT_RETURN_CODE_ERR;
+    }
+    return _handle_uni_uplink_response_fsm(packetCounter, false);
 }
 
 miotyAtClient_returnCode miotyAtClient_sendMessageBidiTransparent(uint8_t *msg, uint8_t sizeMsg, uint8_t *data, uint8_t *size_data, uint32_t *packetCounter)
